@@ -2,6 +2,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
+const http = require("http");
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
@@ -12,7 +13,9 @@ const multer = require('multer');
 const GridFsStorage = require('multer-gridfs-storage');
 const Grid = require('gridfs-stream');
 const sharp = require('sharp');
+const { ObjectId } = require('mongodb');
 const path = require('path');
+const fs = require('fs');
 
 
 
@@ -20,6 +23,7 @@ const { GridFsBucket } = mongoose.mongo;
 
 
 const generateUniqueId = require('generate-unique-id');
+const { fstat } = require('fs');
 const storage = multer.diskStorage({
   destination: './uploads/',
   filename: function(req, file, cb) {
@@ -64,6 +68,8 @@ const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(cors());
+app.use(express.static('uploads'));
+
 
 // Set up MongoDB connection
 mongoose.connect('mongodb://localhost/chat_app', { useNewUrlParser: true, useUnifiedTopology: true })
@@ -107,6 +113,7 @@ const Message = mongoose.model('Message', messageSchema);
 
 // Define JWT secret
 const secret = 'secret123';
+
 
 // Define API endpoints
 app.post('/api/register', (req, res) => {
@@ -168,11 +175,18 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid username or password' });
     }
     const token = jwt.sign({ userId: user._id }, secret, { expiresIn: '1h' });
-    res.status(200).json({ user, token });
+    const userWithAvatarUrl = { 
+      username: user.username, 
+      email: user.email, 
+      avatar: `http://localhost:4000/${user.avatar}`,
+    };
+    res.status(200).json({ user: userWithAvatarUrl, token });
   } catch (error) {
     res.status(500).json({ message: 'Error logging in', error });
   }
 });
+
+
 
 
 app.get('/api/rooms', async (req, res) => {
@@ -184,11 +198,23 @@ app.get('/api/rooms', async (req, res) => {
   }
 });
 
+// get avatar from uploud folder and send it to the client
+// app.get('/img', (req, res) => {
+//   fs.Readfile('./uploads/' + req.query.filename, (err, data) => {
+//     if (err) {
+//       console.log(err);
+//       res.status(500).json({ message: 'Error getting avatar', err });
+//     }
+//     res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+//     res.end(data);
+//   });
+// });
+
 app.post('/api/rooms', async (req, res) => {
   try {
     const { name, description, password } = req.body;
     const roomId = generateUniqueId();
-    const url = `http://localhost:3000/room/${roomId}`;
+    const url = `http://localhost:4000/room/${roomId}`;
     // Create a new room
     const room = new Room({
       name,
@@ -248,6 +274,41 @@ app.post('/api/rooms', async (req, res) => {
       res.status(500).json({ message: 'Error updating room', error });
     }
   });
+
+// POST /api/messages - create a new message
+// POST /api/messages - create a new message use different method
+
+app.post('/api/messages', async (req, res) => {
+  try {
+    // Retrieve the user ID based on the username
+    const user = await User.findOne({ username: req.body.sender });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+  
+    const message = new Message({
+      text: req.body.text,
+      sender: user._id,
+      room: ObjectId(req.body.room),
+    });
+    await message.save();
+    res.json(message);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// GET /api/messages?room=<room_id> - retrieve all messages for a given room
+app.get('/api/messages', async (req, res) => {
+  try {
+    const messages = await Message.find({ room: ObjectId(req.query.room) }).populate('sender', 'username');
+    res.json(messages);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
   
   app.delete('/api/rooms/:roomId', async (req, res) => {
     try {
@@ -263,7 +324,9 @@ app.post('/api/rooms', async (req, res) => {
   });
 // add websocket server
 
-const server = app.listen(4000, () => console.log('Server started on port 4000'));
+// const server = app.listen(4000, () => console.log('Server started on port 4000'));
+
+const server = http.createServer(app);
 
 const io = require('socket.io')(server, {
   cors: {
@@ -290,8 +353,10 @@ io.on("connection", (socket) => {
 });
 
 
+
   
 
 
-  app.listen(3000, () => console.log('Server started on port 3000'));
-  
+server.listen(4000, () => {
+  console.log("SERVER RUNNING");
+});  
