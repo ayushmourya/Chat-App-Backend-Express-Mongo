@@ -1,4 +1,4 @@
-// Import dependencies
+
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -31,7 +31,6 @@ const storage = multer.diskStorage({
   }
 });
 
-// Initialize upload
 const upload = multer({
   storage: storage,
   limits: {
@@ -42,15 +41,13 @@ const upload = multer({
   }
 }).single('avatar');
 
-// Check file type
+
 function checkFileType(file, cb) {
-  // Allowed extensions
+  
   const filetypes = /jpeg|jpg|png|gif/;
 
-  // Check the extension
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
 
-  // Check the mime type
   const mimetype = filetypes.test(file.mimetype);
 
   if (mimetype && extname) {
@@ -71,12 +68,10 @@ app.use(cors());
 app.use(express.static('uploads'));
 
 
-// Set up MongoDB connection
-mongoose.connect('mongodb://localhost/chat_app', { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect('mongodb+srv://ayush:admin@cluster0.ml11umh.mongodb.net/?retryWrites=true&w=majority', { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Connected to MongoDB'))
   .catch(error => console.log('Error connecting to MongoDB', error));
 
-// Define database schema
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true },
   email: { type: String, required: true },
@@ -95,7 +90,8 @@ const roomSchema = new mongoose.Schema({
     required: false // password is optional
   },
   isPrivate: { type: Boolean, default: false },
-  url: { type: String, required: true },
+  owner: { type: String, required: true },
+  url: { type: String, required: false },
 });
 
 
@@ -111,34 +107,36 @@ const User = mongoose.model('User', userSchema);
 const Room = mongoose.model('Room', roomSchema);
 const Message = mongoose.model('Message', messageSchema);
 
-// Define JWT secret
 const secret = 'secret123';
 
+app.get('/healthcheck', (req, res) => {
+  res.send('OK');
+});
 
-// Define API endpoints
-app.post('/api/register', (req, res) => {
+app.get('/authors', (req, res) => {
+  res.send({author: 'MAVG'});
+});
+
+
+app.post('/api/chitchat/register', (req, res) => {
   upload(req, res, async (err) => {
     if (err) {
       console.error(err);
       return res.status(400).json({ message: err.message });
     }
 
-    // Check if all fields are present
     if (!req.body.username || !req.body.email || !req.body.password) {
       return res.status(400).json({ message: 'All fields are required' });
     }
 
-    // If the avatar field is present, set the filename to the uploaded file's filename
     let filename;
     if (req.file) {
       filename = req.file.filename;
     }
 
     try {
-      // Hash the password
       const hashedPassword = await bcrypt.hash(req.body.password, 10);
 
-      // Create a user object with the provided data and the hashed password and filename (if any)
       const user = new User({
         username: req.body.username,
         email: req.body.email,
@@ -146,7 +144,6 @@ app.post('/api/register', (req, res) => {
         avatar: filename || null
       });
 
-      // Save the user document to the database
       const savedUser = await user.save();
       console.log('User saved to database:', savedUser);
       res.json(savedUser);
@@ -163,7 +160,7 @@ app.post('/api/register', (req, res) => {
 
 
 
-app.post('/api/login', async (req, res) => {
+app.post('/api/chitchat/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ username });
@@ -189,7 +186,7 @@ app.post('/api/login', async (req, res) => {
 
 
 
-app.get('/api/rooms', async (req, res) => {
+app.get('/api/chitchat/rooms', async (req, res) => {
   try {
     const rooms = await Room.find().populate('members', 'username');
     res.status(200).json(rooms);
@@ -210,21 +207,21 @@ app.get('/api/rooms', async (req, res) => {
 //   });
 // });
 
-app.post('/api/rooms', async (req, res) => {
+app.post('/api/chitchat/rooms', async (req, res) => {
   try {
-    const { name, description, password } = req.body;
+    const { name, description, password, owner } = req.body;
     const roomId = generateUniqueId();
     const url = `http://localhost:4000/room/${roomId}`;
-    // Create a new room
+    
     const room = new Room({
       name,
       description,
       password,
       isPrivate: !!password,
       url,
+      owner, 
     });
     
-    // Save the room to the database
     await room.save();
     
     res.status(201).json(room);
@@ -233,11 +230,10 @@ app.post('/api/rooms', async (req, res) => {
   }
 });
 
-  app.get('/api/rooms/:roomId', async (req, res) => {
+  app.get('/api/chitchat/rooms/:roomId', async (req, res) => {
     try {
       const { roomId } = req.params;
   
-      // Find the room by id
       const room = await Room.findById(roomId).populate('members', 'username');
       
       if (!room) {
@@ -250,23 +246,20 @@ app.post('/api/rooms', async (req, res) => {
     }
   });
   
-  app.put('/api/rooms/:roomId', async (req, res) => {
+  app.put('/api/chitchat/rooms/:roomId', async (req, res) => {
     try {
       const { roomId } = req.params;
       const { name, members } = req.body;
   
-      // Find the room by id
       const room = await Room.findById(roomId);
       
       if (!room) {
         return res.status(404).json({ message: 'Room not found' });
       }
       
-      // Update the room
       room.name = name || room.name;
       room.members = members || room.members;
       
-      // Save the updated room to the database
       await room.save();
       
       res.status(200).json(room);
@@ -275,12 +268,39 @@ app.post('/api/rooms', async (req, res) => {
     }
   });
 
-// POST /api/messages - create a new message
-// POST /api/messages - create a new message use different method
 
-app.post('/api/messages', async (req, res) => {
+
+  app.get('/api/chitchat/user/:username', async (req, res) => {
+    try {
+      const { username } = req.params;
+      const user = await User.findOne({ username }).select('-password');
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      res.status(200).json(user);
+    } catch (error) {
+      res.status(500).json({ message: 'Error getting user', error });
+    }
+  });
+
+
+app.get('/api/chitchat/users', async (req, res) => {
   try {
-    // Retrieve the user ID based on the username
+    const users = await User.find().select('-password');
+    res.status(200).json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Error getting users', error });
+  }
+});
+
+
+
+
+
+
+
+app.post('/api/chitchat/messages', async (req, res) => {
+  try {
     const user = await User.findOne({ username: req.body.sender });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
@@ -299,8 +319,7 @@ app.post('/api/messages', async (req, res) => {
   }
 });
 
-// GET /api/messages?room=<room_id> - retrieve all messages for a given room
-app.get('/api/messages', async (req, res) => {
+app.get('/api/chitchat/messages', async (req, res) => {
   try {
     const messages = await Message.find({ room: ObjectId(req.query.room) }).populate('sender', 'username');
     res.json(messages);
@@ -310,7 +329,7 @@ app.get('/api/messages', async (req, res) => {
   }
 });
   
-  app.delete('/api/rooms/:roomId', async (req, res) => {
+  app.delete('/api/chitchat/rooms/:roomId', async (req, res) => {
     try {
       const { roomId } = req.params;
   
@@ -322,9 +341,7 @@ app.get('/api/messages', async (req, res) => {
       res.status(500).json({ message: 'Error deleting room', error });
     }
   });
-// add websocket server
 
-// const server = app.listen(4000, () => console.log('Server started on port 4000'));
 
 const server = http.createServer(app);
 
@@ -334,7 +351,6 @@ const io = require('socket.io')(server, {
   }
 });
 
-// backend
 io.on("connection", (socket) => {
   console.log(`User Connected: ${socket.id}`);
 
@@ -354,9 +370,7 @@ io.on("connection", (socket) => {
 
 
 
-  
 
-
-server.listen(4000, () => {
+server.listen(3000, () => {
   console.log("SERVER RUNNING");
 });  
