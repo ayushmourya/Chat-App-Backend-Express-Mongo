@@ -44,7 +44,7 @@ const upload = multer({
 
 function checkFileType(file, cb) {
   
-  const filetypes = /jpeg|jpg|png|gif/;
+  const filetypes = /jp eg|jpg|png|gif/;
 
   const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
 
@@ -175,7 +175,7 @@ app.post('/api/chitchat/login', async (req, res) => {
     const userWithAvatarUrl = { 
       username: user.username, 
       email: user.email, 
-      avatar: `http://localhost:4000/${user.avatar}`,
+      avatar: `/api/chitchat/${user.avatar}`,
     };
     res.status(200).json({ user: userWithAvatarUrl, token });
   } catch (error) {
@@ -211,7 +211,7 @@ app.post('/api/chitchat/rooms', async (req, res) => {
   try {
     const { name, description, password, owner } = req.body;
     const roomId = generateUniqueId();
-    const url = `http://localhost:4000/room/${roomId}`;
+    const url = `/api/chitchat/room/${roomId}`;
     
     const room = new Room({
       name,
@@ -371,6 +371,6 @@ io.on("connection", (socket) => {
 
 
 
-server.listen(3000, () => {
+server.listen(8900, () => {
   console.log("SERVER RUNNING");
 });  
